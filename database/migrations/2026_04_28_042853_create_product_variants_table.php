@@ -20,17 +20,10 @@ return new class extends Migration
             $table->foreignUuid('updated_by')->nullable()->constrained('admin_users')->nullOnDelete();
             $table->timestamp('updated_at')->nullable();
 
-            // Partial unique: only one is_default = true per product
-            // Enforced at application layer (DB-level partial index via raw statement below)
             $table->index('product_id');
+            $table->index(['product_id', 'is_active']);
         });
-
-        // MySQL partial unique index: one default variant per product
-        DB::statement(
-            'CREATE UNIQUE INDEX uq_product_default
-             ON product_variants (product_id)
-             WHERE is_default = 1'
-        );
+        // Note: one-default-per-product is enforced at the service layer via transaction
     }
 
     public function down(): void

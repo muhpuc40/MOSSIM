@@ -10,9 +10,9 @@ return new class extends Migration
     {
         Schema::create('currencies', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->char('code', 3)->unique();          // BDT, USD, EUR
-            $table->string('symbol', 5);                // ৳, $, €
-            $table->decimal('exchange_rate', 12, 6);    // relative to base currency
+            $table->char('code', 3)->unique();
+            $table->string('symbol', 5);
+            $table->decimal('exchange_rate', 12, 6);
             $table->boolean('is_default')->default(false);
         });
     }

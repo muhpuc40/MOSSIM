@@ -14,10 +14,10 @@ return new class extends Migration
             $table->enum('discount_type', ['pct', 'flat']);
             $table->decimal('discount_value', 10, 2);
             $table->decimal('min_order_amount', 12, 2)->default(0);
-            $table->integer('max_uses')->nullable();        // null = unlimited
+            $table->integer('max_uses')->nullable();
             $table->integer('used_count')->default(0);
-            $table->timestamp('valid_from');
-            $table->timestamp('valid_to');
+            $table->dateTime('valid_from');           // dateTime avoids MariaDB timestamp strict mode
+            $table->dateTime('valid_to');
             $table->boolean('is_active')->default(true);
             $table->foreignUuid('created_by')->constrained('admin_users')->restrictOnDelete();
 
