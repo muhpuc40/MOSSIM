@@ -16,10 +16,10 @@ class ProductImage extends Model
 
     protected $fillable = [
         'product_id',
-        'color_id',
+        'variant_id',   // nullable — null means image applies to all variants
         'url',
         'alt_text',
-        'is_primary',
+        'is_primary',   // max 2 per product enforced in service layer
         'sort_order',
     ];
 
@@ -35,11 +35,9 @@ class ProductImage extends Model
         return $this->belongsTo(Product::class, 'product_id');
     }
 
-    /**
-     * Null = image belongs to all colors.
-     */
-    public function color(): BelongsTo
+    // null variant_id = image shown for all variants
+    public function variant(): BelongsTo
     {
-        return $this->belongsTo(ProductColor::class, 'color_id');
+        return $this->belongsTo(ProductVariant::class, 'variant_id');
     }
 }

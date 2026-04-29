@@ -18,7 +18,6 @@ class ProductSize extends Model
     protected $fillable = [
         'product_id',
         'size_label',
-        'sort_order',
     ];
 
     // ─── Relationships ───────────────────────────────────────────────────────

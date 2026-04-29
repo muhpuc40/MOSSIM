@@ -28,7 +28,6 @@ class StoreProductRequest extends FormRequest
             // Sizes (at least one required)
             'sizes'                 => ['required', 'array', 'min:1'],
             'sizes.*.size_label'    => ['required', 'string', 'max:20'],
-            'sizes.*.sort_order'    => ['integer', 'min:0'],
         ];
     }
 }

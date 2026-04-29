@@ -82,7 +82,7 @@ class ProductService
                 'colors',
                 'sizes',
                 'images'              => fn ($q) => $q->orderBy('sort_order'),
-                'variants'            => fn ($q) => $q->where('is_active', true)->with(['color', 'size']),
+                'variants'            => fn ($q) => $q->where('is_active', true)->with(['color', 'size', 'images']),
                 'variants.prices'     => fn ($q) => $q->with('currency'),
             ])
             ->firstOrFail();

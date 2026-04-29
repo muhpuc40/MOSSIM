@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Product extends Model
 {
@@ -58,5 +59,23 @@ class Product extends Model
     public function prices(): HasManyThrough
     {
         return $this->hasManyThrough(ProductPrice::class, ProductVariant::class, 'product_id', 'variant_id');
+    }
+
+    // ─── Lean list helpers (API card / product thumbnail) ─────────────────────
+
+    // Exactly 2 primary images per product — used for product card
+    public function primaryImages(): HasMany
+    {
+        return $this->hasMany(ProductImage::class, 'product_id')
+                    ->where('is_primary', true)
+                    ->orderBy('sort_order');
+    }
+
+    // Default active variant — carries the default price shown on product card
+    public function defaultVariant(): HasOne
+    {
+        return $this->hasOne(ProductVariant::class, 'product_id')
+                    ->where('is_default', true)
+                    ->where('is_active', true);
     }
 }

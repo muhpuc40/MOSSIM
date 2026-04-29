@@ -11,14 +11,23 @@ return new class extends Migration
         Schema::create('product_images', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('product_id')->constrained('products')->cascadeOnDelete();
-            // null = image applies to all colors
-            $table->foreignUuid('color_id')->nullable()->constrained('product_colors')->nullOnDelete();
+
+            // null = image applies to all variants of this product
+            // variant already carries color + size — no separate color_id needed
+            $table->foreignUuid('variant_id')
+                  ->nullable()
+                  ->constrained('product_variants')
+                  ->cascadeOnDelete();
+
             $table->text('url');
             $table->string('alt_text', 200)->nullable();
+
+            // max 2 is_primary = true per product — enforced at service layer
             $table->boolean('is_primary')->default(false);
             $table->integer('sort_order')->default(0);
 
-            $table->index(['product_id', 'color_id']);
+            $table->index(['product_id', 'variant_id']);
+            $table->index(['product_id', 'is_primary']);
         });
     }
 

@@ -18,17 +18,17 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         [$bdt, $usd] = $this->seedCurrencies();
-        $admin = $this->seedAdmins();
+        $admin       = $this->seedAdmins();
 
         $products = $this->productsData();
         foreach ($products as $data) {
             $this->createProduct($data, $admin, $bdt, $usd);
         }
 
-        $this->command->info('✓ Seeded ' . count($products) . ' products with variants, images, and prices.');
+        $this->command->info('✓ Seeded ' . count($products) . ' products.');
     }
 
-    // ─── Currencies ───────────────────────────────────────────────────────────
+    // ─── Currencies ──────────────────────────────────────────────────────────
 
     private function seedCurrencies(): array
     {
@@ -49,7 +49,7 @@ class DatabaseSeeder extends Seeder
         return [$bdt, $usd];
     }
 
-    // ─── Admin users ──────────────────────────────────────────────────────────
+    // ─── Admin users ─────────────────────────────────────────────────────────
 
     private function seedAdmins(): AdminUser
     {
@@ -93,9 +93,11 @@ class DatabaseSeeder extends Seeder
             'created_by'   => $admin->id,
         ]);
 
-        // Colors
+        // ── Colors (limit to max 2-3 colors to keep variants under 5) ─────────
         $colorModels = [];
-        foreach ($data['colors'] as $colorData) {
+        $maxColors = min(count($data['colors']), 3); // Max 3 colors
+        for ($i = 0; $i < $maxColors; $i++) {
+            $colorData = $data['colors'][$i];
             $colorModels[] = ProductColor::create([
                 'product_id' => $product->id,
                 'color_name' => $colorData['name'],
@@ -103,43 +105,31 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Sizes
+        // ── Sizes (limit to max 2-3 sizes to keep variants under 5) ───────────
         $sizeModels = [];
-        foreach ($data['sizes'] as $i => $label) {
+        $maxSizes = min(count($data['sizes']), 3); // Max 3 sizes
+        for ($i = 0; $i < $maxSizes; $i++) {
             $sizeModels[] = ProductSize::create([
                 'product_id' => $product->id,
-                'size_label' => $label,
-                'sort_order' => $i + 1,
+                'size_label' => $data['sizes'][$i],
             ]);
         }
 
-        // Images — front + back per color
-        foreach ($colorModels as $ci => $color) {
-            $slug = strtolower(str_replace(' ', '-', $color->color_name));
-            ProductImage::create([
-                'product_id' => $product->id,
-                'color_id'   => $color->id,
-                'url'        => "/images/products/{$data['code']}/{$slug}-front.jpg",
-                'alt_text'   => "{$product->name} — {$color->color_name}",
-                'is_primary' => $ci === 0,
-                'sort_order' => 1,
-            ]);
-            ProductImage::create([
-                'product_id' => $product->id,
-                'color_id'   => $color->id,
-                'url'        => "/images/products/{$data['code']}/{$slug}-back.jpg",
-                'alt_text'   => "{$product->name} — {$color->color_name} (Back)",
-                'is_primary' => false,
-                'sort_order' => 2,
-            ]);
-        }
+        // ── Variants (color × size) + Prices ─────────────────────────────────
+        // Track the first variant per color — used as the image representative.
+        $firstVariantByColor = [];
+        $isFirstVariant      = true;
+        $totalVariants = 0;
+        $maxVariants = 5; // Maximum 5 variants per product
 
-        // Variants (color × size) + prices in BDT and USD
-        $isFirstVariant = true;
         foreach ($colorModels as $color) {
+            if ($totalVariants >= $maxVariants) break;
+            
             $colorCode = $this->colorCode($color->color_name);
 
             foreach ($sizeModels as $size) {
+                if ($totalVariants >= $maxVariants) break;
+                
                 $sku = "{$data['code']}-{$colorCode}-{$size->size_label}";
 
                 $variant = ProductVariant::create([
@@ -154,7 +144,7 @@ class DatabaseSeeder extends Seeder
                     'updated_at' => now(),
                 ]);
 
-                // BDT — default price row for this variant
+                // BDT price — is_default = true (used in product card)
                 ProductPrice::create([
                     'variant_id'     => $variant->id,
                     'currency_id'    => $bdt->id,
@@ -162,9 +152,10 @@ class DatabaseSeeder extends Seeder
                     'discount_type'  => $data['discount_type'] ?? null,
                     'discount_value' => $data['discount_value'] ?? 0,
                     'is_default'     => true,
+                    // current_price auto-computed by MySQL generated column
                 ]);
 
-                // USD — carry percentage discounts across currencies; flat discounts are BDT-specific
+                // USD price — carry percent discounts only (flat is BDT-specific)
                 ProductPrice::create([
                     'variant_id'     => $variant->id,
                     'currency_id'    => $usd->id,
@@ -174,34 +165,65 @@ class DatabaseSeeder extends Seeder
                     'is_default'     => false,
                 ]);
 
+                if (!isset($firstVariantByColor[$color->id])) {
+                    $firstVariantByColor[$color->id] = $variant;
+                }
+
                 $isFirstVariant = false;
+                $totalVariants++;
             }
+        }
+
+        // ── Images ────────────────────────────────────────────────────────────
+        // One front + one back per color, linked to that color's first variant.
+        // Max 2 is_primary = true per product (first 2 colors only).
+        $colorIndex = 0;
+        foreach ($colorModels as $color) {
+            if (!isset($firstVariantByColor[$color->id])) continue;
+            
+            $representative = $firstVariantByColor[$color->id];
+            $slug           = strtolower(str_replace(' ', '-', $color->color_name));
+            $isPrimary      = $colorIndex < 2;
+
+            ProductImage::create([
+                'product_id' => $product->id,
+                'variant_id' => $representative->id,
+                'url'        => "/images/products/{$data['code']}/{$slug}-front.jpg",
+                'alt_text'   => "{$product->name} – {$color->color_name}",
+                'is_primary' => $isPrimary,
+                'sort_order' => ($colorIndex * 2) + 1,
+            ]);
+
+            ProductImage::create([
+                'product_id' => $product->id,
+                'variant_id' => $representative->id,
+                'url'        => "/images/products/{$data['code']}/{$slug}-back.jpg",
+                'alt_text'   => "{$product->name} – {$color->color_name} (Back)",
+                'is_primary' => false,
+                'sort_order' => ($colorIndex * 2) + 2,
+            ]);
+
+            $colorIndex++;
         }
     }
 
-    /**
-     * Produce a short color abbreviation for the SKU.
-     * Multi-word: first char of word-1 + first two chars of word-2  →  "Sky Blue" = "SKB"
-     * Single-word: first three chars                                →  "Navy"     = "NAV"
-     */
+    // SKU color abbreviation: "Sky Blue" → "SKB" | "Navy" → "NAV"
     private function colorCode(string $name): string
     {
         $words = array_values(array_filter(explode(' ', trim($name))));
 
-        if (count($words) >= 2) {
-            return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 2));
-        }
-
-        return strtoupper(substr($name, 0, 3));
+        return count($words) >= 2
+            ? strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 2))
+            : strtoupper(substr($name, 0, 3));
     }
 
-    // ─── Catalogue data ───────────────────────────────────────────────────────
+    // ─── Catalogue (12 products — 4 types) ───────────────────────────────────
 
     private function productsData(): array
     {
         return [
 
-            // ── Men ─────────────────────────────────────────────────────────
+            // ── Man ───────────────────────────────────────────────────────────
 
             [
                 'code'           => 'MO1001',
@@ -219,12 +241,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => 'percent',
                 'discount_value' => 10,
             ],
-
             [
                 'code'           => 'MO1002',
                 'name'           => 'Slim Fit Denim Jeans',
                 'type'           => 'man',
-                'description'    => 'Crafted from four-way stretch denim for all-day comfort, these slim fit jeans feature a tapered leg, five-pocket construction, and subtle whiskering for a lived-in look.',
+                'description'    => 'Four-way stretch denim, tapered leg, five-pocket construction, subtle whiskering for a lived-in look.',
                 'colors'         => [
                     ['name' => 'Indigo Blue',  'hex' => '#3B4F8C'],
                     ['name' => 'Washed Black', 'hex' => '#2C2C2C'],
@@ -235,12 +256,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => null,
                 'discount_value' => 0,
             ],
-
             [
                 'code'           => 'MO1003',
                 'name'           => 'Premium Polo Shirt',
                 'type'           => 'man',
-                'description'    => 'Our signature polo is knitted from piqué cotton for a refined texture. A ribbed collar, two-button placket, and structured silhouette make it a wardrobe staple.',
+                'description'    => 'Piqué cotton polo with a ribbed collar, two-button placket, and structured silhouette.',
                 'colors'         => [
                     ['name' => 'Navy',     'hex' => '#001F5B'],
                     ['name' => 'Olive',    'hex' => '#6B7B3A'],
@@ -252,12 +272,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => 'percent',
                 'discount_value' => 15,
             ],
-
             [
                 'code'           => 'MO1010',
                 'name'           => 'Cargo Chino Pants',
                 'type'           => 'man',
-                'description'    => 'Utility meets style in these relaxed cargo chinos. Crafted from lightweight cotton twill with multiple functional pockets and an adjustable waist for a versatile, all-day fit.',
+                'description'    => 'Relaxed cargo chinos in lightweight cotton twill with functional pockets and adjustable waist.',
                 'colors'         => [
                     ['name' => 'Khaki',       'hex' => '#C3B091'],
                     ['name' => 'Olive Green', 'hex' => '#6B7B3A'],
@@ -269,13 +288,13 @@ class DatabaseSeeder extends Seeder
                 'discount_value' => 0,
             ],
 
-            // ── Women ────────────────────────────────────────────────────────
+            // ── Women ─────────────────────────────────────────────────────────
 
             [
                 'code'           => 'MO1004',
                 'name'           => 'Summer Floral Dress',
                 'type'           => 'women',
-                'description'    => 'Light as a breeze, this midi dress is crafted from 100% viscose with an all-over floral print. Features a smocked bodice, adjustable straps, and a flowy A-line skirt — perfect for warm-weather occasions.',
+                'description'    => '100% viscose midi dress with smocked bodice, adjustable straps, and a flowy A-line skirt.',
                 'colors'         => [
                     ['name' => 'Blush Pink', 'hex' => '#FFB7C5'],
                     ['name' => 'Ivory',      'hex' => '#FFFFF0'],
@@ -286,12 +305,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => null,
                 'discount_value' => 0,
             ],
-
             [
                 'code'           => 'MO1005',
                 'name'           => 'Linen Relaxed Blouse',
                 'type'           => 'women',
-                'description'    => 'Effortlessly chic in 100% linen, this relaxed blouse features a V-neck, slightly dropped shoulders, and a flowy hem. Breathable and elegant — from brunch to boardroom.',
+                'description'    => '100% linen relaxed blouse with V-neck, dropped shoulders, and a flowy hem.',
                 'colors'         => [
                     ['name' => 'Cream',      'hex' => '#FFFDD0'],
                     ['name' => 'Sage Green', 'hex' => '#8CAF88'],
@@ -303,12 +321,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => 'percent',
                 'discount_value' => 10,
             ],
-
             [
                 'code'           => 'MO1006',
                 'name'           => 'Structured Tailored Blazer',
                 'type'           => 'women',
-                'description'    => 'A power-dressing essential. This single-breasted blazer is cut from a wool-blend with padded shoulders, a nipped waist, and welt pockets. Wear over a blouse or a tee for instant polish.',
+                'description'    => 'Single-breasted wool-blend blazer with padded shoulders, nipped waist, and welt pockets.',
                 'colors'         => [
                     ['name' => 'Charcoal', 'hex' => '#36454F'],
                     ['name' => 'Ivory',    'hex' => '#FFFFF0'],
@@ -319,12 +336,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => null,
                 'discount_value' => 0,
             ],
-
             [
                 'code'           => 'MO1011',
                 'name'           => 'Maxi Wrap Skirt',
                 'type'           => 'women',
-                'description'    => 'A versatile maxi skirt in fluid crêpe with a wrap front, adjustable tie waist, and a slight front slit for ease of movement. Pairs beautifully with tucked-in blouses or fitted tops.',
+                'description'    => 'Fluid crêpe maxi skirt with wrap front, adjustable tie waist, and front slit.',
                 'colors'         => [
                     ['name' => 'Terracotta',   'hex' => '#E2725B'],
                     ['name' => 'Forest Green', 'hex' => '#228B22'],
@@ -336,13 +352,13 @@ class DatabaseSeeder extends Seeder
                 'discount_value' => 10,
             ],
 
-            // ── Kids ─────────────────────────────────────────────────────────
+            // ── Kids ──────────────────────────────────────────────────────────
 
             [
                 'code'           => 'MO1007',
                 'name'           => 'Kids Striped Crew Tee',
                 'type'           => 'kids',
-                'description'    => 'Fun, comfortable, and built to last. This crew-neck tee is knitted from soft ring-spun cotton with classic horizontal stripes and reinforced shoulder seams for active play.',
+                'description'    => 'Ring-spun cotton crew-neck tee with horizontal stripes and reinforced shoulder seams.',
                 'colors'         => [
                     ['name' => 'Red Stripe',  'hex' => '#CC0000'],
                     ['name' => 'Navy Stripe', 'hex' => '#000080'],
@@ -353,12 +369,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => null,
                 'discount_value' => 0,
             ],
-
             [
                 'code'           => 'MO1008',
                 'name'           => 'Kids Jogger Pants',
                 'type'           => 'kids',
-                'description'    => 'Cosy French-terry joggers with an elastic waistband, adjustable drawstring, ribbed ankle cuffs, and two side pockets. Ideal for school days and weekend adventures alike.',
+                'description'    => 'French-terry joggers with elastic waistband, drawstring, ribbed cuffs, and two pockets.',
                 'colors'         => [
                     ['name' => 'Heather Gray', 'hex' => '#B6B6B4'],
                     ['name' => 'Navy',         'hex' => '#000080'],
@@ -370,13 +385,13 @@ class DatabaseSeeder extends Seeder
                 'discount_value' => 5,
             ],
 
-            // ── Unisex ───────────────────────────────────────────────────────
+            // ── Unisex ────────────────────────────────────────────────────────
 
             [
                 'code'           => 'MO1009',
                 'name'           => 'Premium Fleece Hoodie',
                 'type'           => 'unisex',
-                'description'    => 'Wrapped in 380 gsm brushed fleece, this pullover hoodie features a kangaroo pocket, a jersey-lined hood, and ribbed cuffs and hem. A season-transcending layer for any gender.',
+                'description'    => '380 gsm brushed fleece pullover with kangaroo pocket, jersey-lined hood, and ribbed cuffs.',
                 'colors'         => [
                     ['name' => 'Black',        'hex' => '#000000'],
                     ['name' => 'Stone',        'hex' => '#928E85'],
@@ -388,12 +403,11 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => 'percent',
                 'discount_value' => 20,
             ],
-
             [
                 'code'           => 'MO1012',
                 'name'           => 'Oversized Graphic Tee',
                 'type'           => 'unisex',
-                'description'    => 'Our signature oversized tee in a drop-shoulder silhouette cut from 200 gsm heavyweight cotton. Features a subtle MOSSIM chest print and a boxy fit designed to be worn by everyone.',
+                'description'    => '200 gsm heavyweight cotton drop-shoulder tee with MOSSIM chest print. Boxy unisex fit.',
                 'colors'         => [
                     ['name' => 'White', 'hex' => '#FFFFFF'],
                     ['name' => 'Black', 'hex' => '#000000'],
@@ -405,7 +419,6 @@ class DatabaseSeeder extends Seeder
                 'discount_type'  => null,
                 'discount_value' => 0,
             ],
-
         ];
     }
 }

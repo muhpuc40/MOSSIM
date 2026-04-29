@@ -12,7 +12,6 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('product_id')->constrained('products')->cascadeOnDelete();
             $table->string('size_label', 20);   // S / M / L / XL …
-            $table->integer('sort_order')->default(0);
         });
     }
 

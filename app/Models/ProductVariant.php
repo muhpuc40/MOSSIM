@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ProductVariant extends Model
 {
@@ -56,9 +57,21 @@ class ProductVariant extends Model
         return $this->belongsTo(AdminUser::class, 'updated_by');
     }
 
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class, 'variant_id');
+    }
+
     public function prices(): HasMany
     {
         return $this->hasMany(ProductPrice::class, 'variant_id');
+    }
+
+    // Single default price row — used in lean API list
+    public function defaultPrice(): HasOne
+    {
+        return $this->hasOne(ProductPrice::class, 'variant_id')
+                    ->where('is_default', true);
     }
 
     public function stockLogs(): HasMany
